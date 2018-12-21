@@ -107,10 +107,8 @@ class(run_dataframe)
 RunInWard <- function(run_dataframe){
   vars <- readline("Please enter the Ward you would like to start your run")
   
-  # split the string at the spaces  
-  vars<-unlist(strsplit(vars, split = "\\s"))  
-  # now save vars as a list
-  vars<-as.list(vars)  
+  # Save the vars as a list
+  #vars<-as.list(vars)  
   
   for (i in 1:length(vars)){
     wardvariable <- vars[i]
@@ -119,11 +117,13 @@ RunInWard <- function(run_dataframe){
     print(run_selectedward)
   }
   # Create the plot!
-  #for (i in 1:length(run_selectedward)){
-  #  run_map_plot <- tm_shape(run_dataframe) + tm_lines(run_selectedward, col = "blue", lwd=4)
-  #  run_map_plot
+  for (j in run_selectedward){
+
+    run_map_plot <- tm_shape(run_selectedward) + 
+      tm_lines(col = "blue", lwd=4)
+    run_map_plot
   #  tmap_save(run_map_plot, filename=paste(,".png",sep=""))
-  #}  
+  }  
 }
 RunInWard(allrun_route_sf)
 
