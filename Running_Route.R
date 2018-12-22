@@ -2,6 +2,7 @@ library(sp)
 library(sf)
 library(dplyr)
 library(tmap)
+
 getwd()
 setwd("/Users/audevuilliomenet/Documents/MSc. Smart Cities/GI Systems and Science/GIS_Running/Running/run.kml")
 
@@ -100,33 +101,37 @@ class(allrun_WardID)
 ## Transfrom allrun_WardID back to an sf object!
 allrun_route_sf <- st_as_sf(allrun_WardID)
 
+# Categorize length of the run!
+allrun_route_sf$distance <- ifelse(allrun_route_sf$run_length <= "5000","Short Run", 
+                                   ifelse(allrun_route_sf$run_length <= "10000" | allrun_route_sf$run_length > "5000", "Intermediate Run",
+                                          ifelse(allrun_route_sf$run_length >"10000", "Long Run")))
 
-run_dataframe <- allrun_route_sf
+
+# Transform the coordinate system to WGS84 to be able to plot with leaflet!
+WGS84 <- "+init=epsg:4326"
+run_dataframe <- st_transform(allrun_route_sf, WGS84)
+# run_dataframe_sp <- as(run_dataframe, "Spatial")
+# View(run_dataframe_sp)
 class(run_dataframe)
 
-RunInWard <- function(run_dataframe){
+RunInWard <- function(run_dataframe_sp){
   vars <- readline("Please enter the Ward you would like to start your run")
-  
-  # Save the vars as a list
-  #vars<-as.list(vars)  
-  
-  for (i in 1:length(vars)){
-    wardvariable <- vars[i]
-    columnvector_run <- which(run_dataframe$WardName == vars[i])
-    run_selectedward <- run_dataframe[columnvector_run,]
-    print(run_selectedward)
-  }
+ 
+  columnvector_run <- which(run_dataframe$WardName == vars[i])
+  run_selectedward <- run_dataframe[columnvector_run,]
+  print(run_selectedward)
   # Create the plot!
-  for (j in run_selectedward){
-
+  for (j in 1:nrow(run_dataframe)){
     run_map_plot <- tm_shape(run_selectedward) + 
-      tm_lines(col = "blue", lwd=4)
-    run_map_plot
-  #  tmap_save(run_map_plot, filename=paste(,".png",sep=""))
+      tm_lines(col = "blue", lwd=4, alpha=0.5)
+  return(run_map_plot)
   }  
 }
+
 RunInWard(allrun_route_sf)
 
+# allrun_route_coordinate <- st_coordinates(allrun_route_sf)
+# allrun_multipoints <- st_as_sf(allrun_route_sf)
 
 ###############################################################
 # Selection only the column for a given WardName. 

@@ -12,18 +12,26 @@ ui <- fluidPage(
     # Create the sidebar Panel
     sidebarPanel(
       # Add a description to know what to do!
-      helpText("Choose the LondonWards you would like to start your run from!"),
+      helpText("Choose the ward of London you would like to start your run from!"),
       
       # Create a Slidebar to select the London Wards with route to run from!
-      selectInput("name",
+      selectInput("wardname",
                   label = "Start Run Ward",
-                  choices = allrun_route_sf$WardName)
+                  choices = run_dataframe$WardName)
     ),
     # Create the main Panel
     mainPanel(
-      # leafletOutput("londonmap", width="100%", height=1000)
+      leafletOutput(outputId = "londonmap", width="100%", height=1000)
     )
   )
 )
-server <- function(input,output){}
+server <- function(input,output){
+  # create the map 
+  output$londonmap <- renderLeaflet({
+    leaflet(run_dataframe) %>%
+      addProviderTiles(providers$Esri.WorldTopoMap) %>%
+      addPolylines(data = run_dataframe)
+  })
+}
+
 shinyApp(ui,server)  
