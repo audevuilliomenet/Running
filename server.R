@@ -3,7 +3,10 @@ server <- function(input,output){
   output$londonmap <- renderLeaflet({
     leaflet(run_dataframe_sp) %>%
       addProviderTiles(providers$Esri.WorldTopoMap) %>%
-      addPolylines()
+      # addTiles(options = providerTileOptions(noWrap = TRUE), group = "Satelite")
+      setView(-0.118092,51.509865, zoom = 10) %>%
+      addPolylines() %>%
+      addMarkers(lat = ~lat, lng = ~lng, label =~as.character(distance), data = run_dataframe_sp)
   })
   
   proxy <- leafletProxy("londonmap")
@@ -16,16 +19,38 @@ server <- function(input,output){
       ward_coords <- selected_ward@lines[[1]]@Lines[[1]]@coords
       
       # Clear the previous running path that were shown!
-      proxy %>% clearShapes()
+      proxy %>% clearShapes() %>% clearMarkers()
       
       # center the view on the first running path
       # proxy %>% setView(lng=ward_coords[1],lat=ward_coords[2],zoom=10)
       
       # Redraw the Running Path that correspond to the selected ward!
-      proxy %>% addPolylines(data = selected_ward) 
+      proxy %>% # setView(lng = selected_ward@lines[[1]]@Lines[[1]]@coords[1],
+                #        lat = selected_ward@lines[[1]]@Lines[[1]]@coords[2],
+                #        zoom = 14) %>% 
+      addPolylines(data = selected_ward) %>% 
+        addMarkers(lat = ~lat, lng = ~lng, label =~as.character(distance), data = selected_ward)
     }
-  })
+#  }) 
+#}
+    if (input$distance != ""){
+      # Select only the rows in run_dataframe_sp that correspond to the choosen ward!
+      selected_ward_distance <- subset(selected_ward,selected_ward@data$distance==input$distance)
+      
+      # Clear the previous running path that were shown! And the markers!
+      proxy %>% clearShapes() %>% clearMarkers()
+      
+      # center the view on the first running path
+      # proxy %>% setView(lng=ward_coords[1],lat=ward_coords[2],zoom=10)
+      
+      # Redraw the Running Path that correspond to the selected ward!
+      proxy %>% addPolylines(data = selected_ward_distance) %>% 
+        addMarkers(lat = ~lat, lng = ~lng,label =~as.character(run_length), data = selected_ward_distance)
+    }
+  }) 
   
+  # output$runtable <- renderDataTable({})
+}  
   # Observe function for the map element to redraw if the length of run is changed!
 #  observe({
 #    ifelse (input$distance != ""){
@@ -42,5 +67,5 @@ server <- function(input,output){
 #      proxy %>% addPolylines(data = selected_ward_distance) 
 #    }
 #  })
-}
+#}
 
