@@ -2,7 +2,7 @@
 title: "Run_SpatialAnalysis"
 author: "Aude Vuilliomenet"
 date: "12/26/2018"
-output: html_document
+output: github_document
 runtime: shiny
 ---
 ```{r}
@@ -35,8 +35,10 @@ for (index in 2:length(run_november)){
   read_run <- data.frame(sf::st_read(run_november[index]))
   firstrow_run <- read_run[1,]
   dataframe_allrun_november <- rbind(dataframe_allrun_november, firstrow_run) 
-  print(dataframe_allrun_november)
 } 
+rm(read_run)
+rm(firstrow_run)
+rm(first_running)
 ```
 Mapmyrun records the x,y and z geometry. The z geometry gives information on the height profile. Even if the z geometry would be interesting to analyse, it was chosen to remove it for the further exploration of the data. It is indeed much more convenient to remove the z geometry to handle the data. The next steps change the dataframe to an sf object dataframe An sf dataframe has the advantage of containing spatial information (here geometry lines) and allow to make geographic calculation such as calculate the length of each route. 
 ```{r}
@@ -49,7 +51,7 @@ WGS84 <- "+init=epsg:4326"
 allrun_november_sf  <- st_transform(allrun_november_sf, WGS84)
 # Delete a column we don't need it!
 allrun_november_sf  <- allrun_november_sf[,-2]
-View(allrun_november_sf)
+# View(allrun_november_sf)
 ```
 Before starting with any analyses, let's have a quick look at the running data.
 ```{r}
@@ -65,7 +67,7 @@ In order to do some descriptive statitics to understand what are the most common
 run_length_november <- st_length(allrun_november_sf)
 # Append the run_length to the dataframe!
 allrun_november_sf <- cbind(allrun_november_sf,run_length_november)
-View(allrun_november_sf)
+# View(allrun_november_sf)
 ```
 It might be interesting to categorize the running routes depending on their length. Here three groups are formed. The routes that are up to 5 km are named "short run", the routes that are between 5km and 10km are classified as "intermediate run", the others, with a distance greater than 10km are named "long run".
 ```{r}
@@ -85,7 +87,7 @@ library(ggplot2)
 histogram <- ggplot(rln, aes(x=run_length_november)) +
   geom_histogram(aes(y=..density..), colour="white") + 
                    geom_density(color="blue", size=0.5) +
-                   geom_vline(aes(xintercept=median(run_length_november), color="red"))+
+                   geom_vline(aes(xintercept=median(run_length_november), color="red"))
 plot(histogram)
 
 # Create a box plot for running distribution
@@ -104,7 +106,6 @@ Let's start by calculating the start location of each run!
 ```{r}
 # Transfrom the sf object to an sp object! It will be easier to extract the first latitude/longitude for each path. 
 run_november_sp <- as(allrun_november_sf, "Spatial")
-
 # create a dataframe for adding the first lng/lat of each running path!
 #### Longitude ####
 longitude <- data.frame(run_november_sp@lines[[1]]@Lines[[1]]@coords[1,1])
@@ -133,6 +134,7 @@ run_november_sp@data$latitude <- cbind(run_november_sp@data$latitude, latitude)
 
 # Transform back to an sf object!
 run_november_sf <- st_as_sf(run_november_sp)
+# View(run_november_sf)
 # Drop the linestrings geometry! Here we are only interested in the start of the run!
 start_point <- st_set_geometry(run_november_sf, NULL)
 
@@ -168,24 +170,44 @@ LondonWards_sp <- as(LondonWards_sf, "Spatial")
 ## Counts the number of hunt in each wards. "poly.counts" function!
 library(GISTools)
 counts_start_point <- poly.counts(start_point_sp, LondonWards_sp)
-class(counts_start_point)
-View(counts_start_point)
-```
-```{r}
+# class(counts_start_point)
+# View(counts_start_point)
+
 # Add the count number as a column in the spatialPolygonsDataframe
 LondonWards_sp@data$startrun_count <- counts_start_point
 # Calculate the density -> Wards are of different size!
 LondonWards_sp@data$startrundensity <- LondonWards_sp$startrun_count/poly.areas(LondonWards_sp)
-LondonWards_sp@data
-
-# Quick Choropleth map 
+```
+Let's have a look at the chloropleth map for the density of the starting location of the run routes in the London Wards. 
+At first glance, there are no easily recognizable clusterings of wards, which tend to have a significant higher value as starting run location. Three wards in the city of London (... , ... and ...) can however been identified as being important as a start location for runners. 
+```{r}
+# Quick Choropleth map - Start Run Density
 tm_shape(LondonWards_sp) +
   tm_polygons("startrundensity",
               style="jenks",
-              palette="RdBu",
+              palette="PuBu",
+              midpoint=NA,
+              title="Start Run Density")
+# !!! Here we need to bear in mind that the city of London ward have a much smaller area than the other ward of London. This means that even a small number of run in these wards, will cause a high start run density compare to other ward of London that are much bigger !!! # 
+
+# As for this analysis, there are only 371 run routes that are analysed, it is interesting to look at the starting location of the run routes not in term of density but in term of count. This is not perfect as it only quantifies the number of runs in each wards, without taking into account demographic information such as the number of people living in these wards. This map gives incentives for furhter analysis of running location and running behaviour of Londoners. Some further analyses could be developed from this. 
+# One example would be to look at the park and sport facilities in these wards. Is there any correlations between the high number of runs and the accessibility to open space? 
+
+# Quick Choropleth map - Start Run Count 
+tm_shape(LondonWards_sp) +
+  tm_polygons("startrun_count",
+              style="jenks",
+              palette="PuBu",
               midpoint=NA,
               title="Start Run Density")
 ```
+Find the Ward with the highest density of run starting there!
+```{r}
+max_start_ward <- max(LondonWards_sp@data$startrundensity)
+ward <- LondonWards_sp@data$startrundensity == max_start_ward
+LondonWards_sf[8,"WD11NM"]
+```
+
 ```{r}
 # Check with a Moran's I test for clustering!
 library(spdep)
@@ -218,11 +240,11 @@ This third question will also be answered through the use of spatial analysis me
 First, the intersection of all running routes with the LondonWards is find and the number of running routes passing through a wards is counted. Then, it is possible to use Moran I's, Geary's C and Getis Ord General G test. 
 ```{r}
 # Find the intersection of the running route with the LondonWards. 
-wards_run_intersect <- st_intersects(LondonWards_sf, allrun_november_sf)
-View(wards_run_intersect)
+wards_run_intersect <- st_intersects(LondonWards_sf, run_november_sf)
+# View(wards_run_intersect)
 # For the first ward. Find all the run passing through the first ward. Make a dataframe with the run id and count the number of run in the dataframe. (sum the column!) 
 first_ward <- wards_run_intersect[1]
-run_i_df <- data.frame(first_run)
+run_i_df <- data.frame(first_ward)
 count_df <- count(run_i_df)
 
 # For loop to find the total run passing through a ward. 
@@ -251,7 +273,7 @@ LondonWards_sp@data$count_run_density <- LondonWards_sp$count_run/poly.areas(Lon
 tm_shape(LondonWards_sp) +
   tm_polygons("count_run",
               style="jenks",
-              palette="RdBu",
+              palette="PuBu",
               midpoint=NA,
               title="Number of running route for each London ward")
 
@@ -259,7 +281,7 @@ tm_shape(LondonWards_sp) +
 tm_shape(LondonWards_sp) +
   tm_polygons("count_run_density",
               style="jenks",
-              palette="RdBu",
+              palette="PuBu",
               midpoint=NA,
               title="Density of running route for each London ward")
 ```
@@ -274,9 +296,9 @@ names(wards_run_intersect_df)[2] <- "RunID"
 
 # Rename the column name for LondonWards_sf to be the same as in wards_run_intersect_df.
 names(LondonWards_sf)[1] <- "WardID" 
-names(LondonWards_sf)[4] <- "WardName"
 names(LondonWards_sf)[2] <- "WardCode"
-
+names(LondonWards_sf)[4] <- "WardName"
+View(LondonWards_sf)
 #### Append the Allrun November and LondonWards dataframes to the wards_run_intersect dataframe
 # This allow us to have the run geometry and the LondonWards name for each corresponding run!
 # Create a new column for allrun_november_sf dataframe 
@@ -286,7 +308,7 @@ run_november_sf <- cbind(run_november_sf,RunID)
 run_november_RunID <- merge(wards_run_intersect_df,run_november_sf, by="RunID")
 # Append the LondonWards to the run_november dataframe. 
 run_november_WardID <- merge(run_november_RunID,LondonWards_sf, by="WardID")
-View(run_november_WardID)
+# View(run_november_WardID)
 # Delete the geometry for the LondonWards
 run_november_WardID <-  run_november_WardID[,-c(14)]
 # Rename the run_november_WardID geometry!
@@ -294,13 +316,13 @@ names(run_november_WardID)[8] <- "geometry"
 ## Transfrom run_november_WardID back to an sf object!
 run_november_sf <- st_as_sf(run_november_WardID)
 summary(run_november_sf)
+View(run_november_sp)
 
 # Transform the coordinate system to WGS84 to be able to plot with leaflet!
 WGS84 <- "+init=epsg:4326"
-run_november <- st_transform(run_november_sf, WGS84)
+run_november_crs <- st_transform(run_november_sf, WGS84)
 # Transform rund_dataframe to an sp object! Use in leaflet!
-run_november_sp <- as(run_november, "Spatial")
-run_november_sp@data$WardName
+run_november_sp <- as(run_november_crs, "Spatial")
 
 ## Function to selection the Ward to start from!
 RunInWard <- function(run_november_sp){
@@ -318,44 +340,106 @@ RunInWard <- function(run_november_sp){
 }
 RunInWard(run_november_sp)
 ```
+Build the shiny application to view the run routes and select the ward where I wish to start my run!
+Any shiny application has three components, a user interface, a server function and a function to call the shinyApp. First, the user interface is built. This user interface is fairly simple showing a main window with an interactive map of London and a sider panel with two interactive sidebars, the first one to selection the London wards, where run routes are passing through, the second to selection the type of run routes (short, intermediate and long). 
+```{r}
+library(shiny)
 
-
-
-
-
-
-
-
-This R Markdown document is made interactive using Shiny. Unlike the more traditional workflow of creating static reports, you can now create documents that allow your readers to change the assumptions underlying your analysis and see the results immediately. 
-
-To learn more, see [Interactive Documents](http://rmarkdown.rstudio.com/authoring_shiny.html).
-
-## Inputs and Outputs
-
-You can embed Shiny inputs and outputs in your document. Outputs are automatically updated whenever inputs change.  This demonstrates how a standard R plot can be made interactive by wrapping it in the Shiny `renderPlot` function. The `selectInput` and `sliderInput` functions create the input widgets used to drive the plot.
-
-```{r eruptions, echo=FALSE}
-
-```
-
-## Embedded Application
-
-It's also possible to embed an entire Shiny application within an R Markdown document using the `shinyAppDir` function. This example embeds a Shiny application located in another directory:
-
-```{r tabsets, echo=FALSE}
-shinyAppDir(
-  system.file("examples/06_tabsets", package = "shiny"),
-  options = list(
-    width = "100%", height = 550
+# Define user interface
+ui <- fluidPage(
+   
+  # Create the application title
+  titlePanel("Run Route in London"),
+  
+  # Create the two part of the dashboard. 
+  sidebarLayout(position = "right",
+                # Create the sidebar Panel
+                sidebarPanel(
+                  # Add a description to know what to do!
+                  helpText("Choose the ward of London you would like to start your run from!"),
+                  
+                  # Create a Slidebar to select the London Wards with route to run from!
+                  selectInput("variable",
+                              label = "Start Run Ward",
+                              choices = run_november_sp@data$WardName),
+                  # Create a second Slidebar to select the length of the run!
+                  helpText("Choose the length of your run!
+                           Short Run : Less than 5 km.
+                           Intermediate Run : Between 5 and 10 km.
+                           Long Run : More than 10km. You feel motivated today!"),
+                  selectInput("distance",
+                              label = "Run Type",
+                              choices = run_november_sp@data$distance)
+                  ),
+                # Create the main Panel
+                mainPanel(
+                  leafletOutput(outputId = "londonmap", width="100%", height=1000)
+                )
   )
 )
 ```
-
-Note the use of the `height` parameter to determine how much vertical space the embedded application should occupy.
-
-You can also use the `shinyApp` function to define an application inline rather then in an external directory.
-
-In all of R code chunks above the `echo = FALSE` attribute is used. This is to prevent the R code within the chunk from rendering in the document alongside the Shiny components.
-
-
-
+Once the user interface is built, it is time to create the server interface. First, the "londonmap" needs to be created. This map will show the map of London with the run routes and the London Wards. When the user select a ward, the map will be redraw to show only the runs passing through the selected ward. This will be the same for the run type. Once the user has selected the ward, he is able to select the run type and a map is drawn. Here an observer function is used. If the user change the input, the map will be directly redraw. 
+```{r}
+# Define server function to draw the run routes
+server <- function(input, output) {
+  
+  # Create color palette to draw each runs depending on their type (short, intermediate, long)
+  pal <- colorFactor(palette = c("blue", "red", "green"), domain = run_november_sp$distance)
+  
+  # Create the London Map with the run!
+  output$londonmap <- renderLeaflet({
+    leaflet(run_november_sp) %>%
+      addProviderTiles(providers$Esri.WorldTopoMap) %>%
+      # Set the view to London
+      setView(-0.118092,51.509865, zoom = 10) %>%
+      # Add the LondonWards
+      addPolygons(fillColor= "transparent", weight = 0.6, opacity = 0.6, color = "black", fillOpacity = 0.1, data = LondonWards_sf, label = ~as.character(WardName)) %>%
+      # Plot the runs 
+      addPolylines(color=~pal(distance), weight = 0.8) %>%
+      # Add marker to the start of each run
+      addMarkers(lat = ~latitude, lng = ~longitude, label =~as.character(distance), data = run_november_sp)
+  })
+  
+  proxy <- leafletProxy("londonmap")
+  
+  # Observe function for the map element to redraw if the ward is changed!
+  observe({
+    
+    if (input$variable != ""){
+      # Select only the rows in run_dataframe_sp that correspond to the choosen ward!
+      selected_ward <- subset(run_november_sp,run_november_sp@data$WardName==input$variable)
+      
+      # Clear the previous running path that were shown!
+      proxy %>% clearShapes() %>% clearMarkers()
+      
+      # Redraw the Running Path that correspond to the selected ward!
+      proxy %>% 
+        addPolylines(color=~pal(distance), weight = 2, opacity=1, data = selected_ward) %>% 
+        addMarkers(lat = ~latitude, lng = ~longitude, label =~as.character(distance), data = selected_ward)
+    }
+    
+    if (input$distance != ""){
+      # Select only the rows in run_dataframe_sp that correspond to the choosen distance!
+      selected_ward_distance <- subset(selected_ward,selected_ward@data$distance==input$distance)
+      # This line will select all the run in London corresponding to short, intermediate or long!
+      #selected_ward_distance <- subset(run_november_sp,run_november_sp@data$distance==input$distance)
+      
+      # Clear the previous running path that were shown! And the markers!
+      proxy %>% clearShapes() %>% clearMarkers()
+      
+      # center the view on the first running path
+      # proxy %>% setView(lng=ward_coords[1],lat=ward_coords[2],zoom=10)
+      
+      # Redraw the Running Path that correspond to the selected ward!
+      proxy %>% 
+        addPolylines(color=~pal(distance), weight = 2,opacity = 1, data = selected_ward_distance) %>% 
+        addMarkers(lat = ~latitude, lng = ~longitude,label =~as.character(run_length_november), data = selected_ward_distance)
+    }
+  }) 
+}  
+```
+Now that the user and server interface have benn made, it is possible to call the application to use it! 
+```{r}
+# Call and run the application 
+shinyApp(ui = ui, server = server)
+```
