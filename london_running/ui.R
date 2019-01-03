@@ -1,33 +1,43 @@
-#
-# This is the user-interface definition of a Shiny web application. You can
-# run the application by clicking 'Run App' above.
-#
-# Find out more about building applications with Shiny here:
-# 
-#    http://shiny.rstudio.com/
-#
-
+#user interface for London Shiny
+library(sp)
+library(sf)
+library(tmap)
+library(dplyr)
+library(rgdal)
 library(shiny)
+library(leaflet)
 
-# Define UI for application that draws a histogram
+source("dataloader.r")
+
+# Define user interface
 shinyUI(fluidPage(
+# ui <- fluidPage(  
+  # Create the application title
+  titlePanel("Run Route in London"),
   
-  # Application title
-  titlePanel("Old Faithful Geyser Data"),
-  
-  # Sidebar with a slider input for number of bins 
-  sidebarLayout(
-    sidebarPanel(
-       sliderInput("bins",
-                   "Number of bins:",
-                   min = 1,
-                   max = 50,
-                   value = 30)
-    ),
-    
-    # Show a plot of the generated distribution
-    mainPanel(
-       plotOutput("distPlot")
-    )
+  # Create the two part of the dashboard. 
+  sidebarLayout(position = "right",
+                # Create the sidebar Panel
+                sidebarPanel(
+                  # Add a description to know what to do!
+                  helpText("Choose the ward of London you would like to start your run from!"),
+                  
+                  # Create a Slidebar to select the London Wards with route to run from!
+                  selectInput("variable",
+                              label = "Start Run Ward",
+                              choices = run_november_sp@data$WardName),
+                  # Create a second Slidebar to select the length of the run!
+                  helpText("Choose the length of your run!
+                           Short Run : Less than 5 km.
+                           Intermediate Run : Between 5 and 10 km.
+                           Long Run : More than 10km. You feel motivated today!"),
+                  selectInput("distance",
+                              label = "Run Type",
+                              choices = run_november_sp@data$distance)
+                  ),
+                # Create the main Panel
+                mainPanel(
+                  leafletOutput(outputId = "londonmap", width="100%", height=1000)
+                )
   )
 ))
