@@ -1,0 +1,454 @@
+---
+title: "Running"
+author: "Aude Vuilliomenet"
+date: "1/2/2019"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+library(sp)
+library(sf)
+library(tmap)
+library(dplyr)
+```
+Introduction:
+This project tries to understand where the people in London run. To answer this question, a sample of recorded runs from the application Mapmyrun was downloaded. In this project, the analysis of 381 running route is made. The routes correspond to the routes uploading by Mapmyrun users between the 21st and 30th of November 2018. 
+Goal:
+1. Calculate the length of each route and understand the running distance of the MapmyRun runners. 
+2. Calculate the coordinate point of the start of each route. Understand where the people start to run. Is there any spatial clustering?
+3. Calculate the intersection of the run with the LondonWards. Are there some wards that are more attractive than others? Spatial clustering analysis. 
+4. Create a shiny application to visualize running distance histogram, starting location distribution, wards distribution.
+
+The following R markdowm show each steps of the coding for doing the analysis of the Running routes.
+
+First a list with all the uploaded running data is created. As Mapmyrun recorded not only entire route (linestring) but also the coordinate points for each miles of the run, there is the necessity of cleaning a little bit the data. The for loops selects therefore only the 1st row of each run (this row represents the running route (linestring)). Each of the linestrings are then append to a dataframe (dataframe_allrun_november). 
+
+```{r echo=T, results='hide'}
+setwd("/Users/audevuilliomenet/Documents/MSc. Smart Cities/GI Systems and Science/GIS London Running/Running/london_running/Run_November.kml")
+
+run_november <- list.files()
+
+first_running <- data.frame(sf::st_read(run_november[1]))
+dataframe_allrun_november <- first_running[1,]
+
+for (index in 2:length(run_november)){
+  read_run <- data.frame(sf::st_read(run_november[index]))
+  firstrow_run <- read_run[1,]
+  dataframe_allrun_november <- rbind(dataframe_allrun_november, firstrow_run) 
+} 
+```
+Mapmyrun records the x,y and z geometry. The z geometry gives information on the height profile. Even if the z geometry would be interesting to analyse, it was chosen to remove it for the further exploration of the data. It is indeed much more convenient to remove the z geometry to handle the data. The next steps change the dataframe to an sf object dataframe An sf dataframe has the advantage of containing spatial information (here geometry lines) and allow to make geographic calculation such as calculate the length of each route. 
+```{r}
+# Change the dataframe to an sf object
+allrun_november_sf <- sf::st_sf(dataframe_allrun_november) 
+# Delete the z-coordinate of the run
+allrun_november_sf <- st_zm(allrun_november_sf, drop = TRUE, what = "ZM")
+# Set the coorindate system of the road to the WGS84. Here WGS84 is choosen rather than British National Grid, as for later use in leaflet, WGS84 is prefered!
+WGS84 <- "+init=epsg:4326"
+allrun_november_sf  <- st_transform(allrun_november_sf, WGS84)
+# Delete a column we don't need it!
+allrun_november_sf  <- allrun_november_sf[,-2]
+```
+Before starting with any analyses, let's have a quick look at the running data.
+```{r}
+# View the run routes on an interactive map. 
+tmap_mode("view")
+tm_shape(allrun_november_sf) +
+  tm_lines(col = "blue", lwd = 4, alpha = 0.5)
+```
+Research Question 1 - What are the distance usually run by Mapmyrun users. 
+
+In order to do some descriptive statitics to understand what are the most common distances run, we need to calculate the length of each running route. 
+```{r}
+run_length_november <- st_length(allrun_november_sf)
+# Append the run_length to the dataframe!
+allrun_november_sf <- cbind(allrun_november_sf,run_length_november)
+```
+It might be interesting to categorize the running routes depending on their length. Here three groups are formed. The routes that are up to 5 km are named "short run", the routes that are between 5km and 10km are classified as "intermediate run", the others, with a distance greater than 10km are named "long run".
+```{r}
+allrun_november_sf$run_length_november <- as.numeric(run_length_november)
+# Define the three categories, short run, intermediate run and long run. Add it as a column in the dataframe. 
+allrun_november_sf$distance <- ifelse(allrun_november_sf$run_length_november <= 5000, "Short Run",
+                             ifelse((allrun_november_sf$run_length_november >= 5000 & allrun_november_sf$run_length_november <= 10000), "Intermediate Run","Long Run"))
+```
+Now that we have the lenght of all run, we can create an histogram to see the distribution of the run. 
+```{r message=FALSE, warning=FALSE}
+# Extract the run length colunm from the allrun_november_sf dataframe!
+rln <- allrun_november_sf[,2]
+# Drop the geometry
+rln <- st_set_geometry(rln, NULL)
+# Create the histogram for the distribution with ggplot!
+library(ggplot2)
+histogram <- ggplot(rln, aes(x=run_length_november)) +
+  geom_histogram(bins=20, colour = "white") + 
+  # geom_density(color="blue", size=0.5) +
+  geom_vline(aes(xintercept=median(run_length_november),
+                 color="median"), size=1) +
+  geom_vline(aes(xintercept=mean(run_length_november),
+                 color="mean"), size=1) +
+  scale_color_manual(name = "statistics", values = c(median = "orange", mean = "red")) +
+  labs(x="run length (m)", y = "count")
+plot(histogram)
+```
+Calculate the mean and median for the run!
+```{r}
+meanrun <- mean(run_length_november)
+median <- median(run_length_november)
+meanrun
+median
+```
+Research Question 2 - Where do the people start to run? 
+
+The following analysis will be a spatial analysis to see if there are any clustering, spatial aggregation of the starting location of the runs. First, we need to extract the first coordinate point of all the running route. Then, it would be possible to map this geographic points inside the LondonWards. And finally, to do a spatial analysis. 
+
+Let's start by calculating the start location of each run! 
+```{r message=FALSE, warning=FALSE}
+# Transfrom the sf object to an sp object! It will be easier to extract the first latitude/longitude for each path. 
+run_november_sp <- as(allrun_november_sf, "Spatial")
+# create a dataframe for adding the first lng/lat of each running path!
+#### Longitude ####
+longitude <- data.frame(run_november_sp@lines[[1]]@Lines[[1]]@coords[1,1])
+longitude <- longitude[1,]
+#### Latitude ####
+latitude <- data.frame(run_november_sp@lines[[1]]@Lines[[1]]@coords[1,2])
+latitude <- latitude[1,]
+
+# loops through all the file in SpatialLine Dataframe!
+# selection only the first longitude value of the running path.
+# append the value to the lng dataframe. 
+# Do the same for the latitude!
+#### Longitude ####
+for (i in 2:nrow(run_november_sp)){
+  get_lng <-  run_november_sp@lines[[i]]@Lines[[1]]@coords[1,1]
+  longitude <- rbind(longitude,get_lng)
+}
+#### Latitude ####
+for (i in 2:nrow(run_november_sp)){
+  get_lat <-  run_november_sp@lines[[i]]@Lines[[1]]@coords[1,2]
+  latitude <- rbind(latitude,get_lat)
+}
+# Append both lng/lat to the data of run_dataframe_sp!
+run_november_sp@data$longitude <- cbind(run_november_sp@data$longitude, longitude) 
+run_november_sp@data$latitude <- cbind(run_november_sp@data$latitude, latitude) 
+# View(run_november_sp)
+
+# Transform back to an sf object!
+run_november_sf <- st_as_sf(run_november_sp)
+
+# Drop the linestrings geometry! Here we are only interested in the start of the run!
+start_point <- st_set_geometry(run_november_sf, NULL)
+
+# Set the geometry from the coordinate of the starting point! 
+start_point <-  st_as_sf(start_point,  coords = c("longitude", "latitude"),crs=WGS84)
+```
+Now we need the LondonWards boundaries. 
+```{r message=FALSE, warning=FALSE}
+library(rgdal)
+LondonWards <- readOGR("/Users/audevuilliomenet/Documents/MSc. Smart Cities/GI Systems and Science/GIS London Running/Running/london_running/LondonWardsBoundaries/LondonWardsNew.shp", layer="LondonWardsNew")
+
+# Transfrom the LondonWards to an sf object and set coordinate system same as the run_dataframe_sf (WGS84). 
+LondonWards_sf <- st_as_sf(LondonWards)
+LondonWards_sf <- st_transform(LondonWards_sf, WGS84)
+# Delete some of the column in Londonwards_sf
+LondonWards_sf <- LondonWards_sf[,-5]
+```
+Let's have a quick view of the distribution of the starting run! 
+```{r}
+tmap_mode("view")
+tm_shape(LondonWards_sf) +
+  tm_polygons(col = NA, alpha = 0.2)+
+  tm_shape(start_point)+
+  tm_dots(col = "blue", size=0.04)
+```
+To be able to analyse the distribution of the starting run, we need to count how many starting points are in each ward. Here we need to transform both object back to sp object!
+The analysis is here in three steps. First, the number of points to be found in each ward is calculated, then the density of points for each ward is calculated and a quick cloropleth map is made. After visualizing the distribution, the spatial analysis is made using a Moran I's, Geary's C and Getis Ord General G test. 
+```{r message=FALSE, warning=FALSE}
+## Transform start location and LondonWards Map to sp DataFrame 
+start_point_sp <- as(start_point,"Spatial")
+LondonWards_sp <- as(LondonWards_sf, "Spatial")
+## Counts the number of hunt in each wards. "poly.counts" function!
+library(GISTools)
+counts_start_point <- poly.counts(start_point_sp, LondonWards_sp)
+# class(counts_start_point)
+# View(counts_start_point)
+
+# Add the count number as a column in the spatialPolygonsDataframe
+LondonWards_sp@data$startrun_count <- counts_start_point
+# Calculate the density -> Wards are of different size!
+LondonWards_sp@data$startrundensity <- LondonWards_sp$startrun_count/poly.areas(LondonWards_sp)
+```
+Let's have a look at the chloropleth map for the density of the starting location of the run routes in the London Wards. 
+At first glance, there are no easily recognizable clusterings of wards, which tend to have a significant higher value as starting run location. Three wards in the city of London (... , ... and ...) can however been identified as being important as a start location for runners. 
+```{r}
+# Quick Choropleth map - Start Run Density
+tm_shape(LondonWards_sp) +
+  tm_polygons("startrundensity",
+              style="jenks",
+              palette="PuBu",
+              title="Start Run Density")
+```
+Here we need to bear in mind that the city of London ward have a much smaller area than the other ward of London. This means that even a small number of run in these wards, will cause a high start run density compare to other ward of London that are much bigger !!!
+
+As for this analysis, there are only 371 run routes that are analysed, it is interesting to look at the starting location of the run routes not in term of density but in term of count. This is not perfect as it only quantifies the number of runs in each wards, without taking into account demographic information such as the number of people living in these wards. This map gives incentives for furhter analysis of running location and running behaviour of Londoners. Some further analyses could be developed from this. 
+One example would be to look at the park and sport facilities in these wards. Is there any correlations between the high number of runs and the accessibility to open space? 
+```{r}
+# Quick Choropleth map - Start Run Count 
+tm_shape(LondonWards_sp) +
+  tm_polygons("startrun_count",
+              style="jenks",
+              palette="PuBu",
+              title="Start Run Density")
+```
+Find the Ward with the highest density of run starting there!
+```{r}
+max_start_ward <- max(LondonWards_sp@data$startrundensity)
+ward <- LondonWards_sp@data$startrundensity == max_start_ward
+LondonWards_sf[8,"WD11NM"]
+```
+Moran's I and Getis Ord General G spatial statistics for run start location density!
+```{r message=FALSE, warning=FALSE}
+# Check with a Moran's I test for clustering!
+library(spdep)
+# Calculate centroids for all Wards in London
+coordsW <- coordinates(LondonWards_sp)
+# Generate a spatial weights matrix and create a neighbours list
+LWard_nb <- poly2nb(LondonWards_sp, queen=T)
+# Create a spatial weights object from these weights
+Lward.lw <- nb2listw(LWard_nb, style="C")
+head(Lward.lw$neighbours)
+
+## Null Hypothesis: There is random distribution of the start location for runs. No spatial autocorrelation. 
+## Alternative Hypothesis: There is spatial autocorrelation of start locations!
+
+# Moran's I test -> cluster value (=1) or dispersed values (=-1)
+moranI_start_run <- moran.test(LondonWards_sp@data$startrundensity, Lward.lw)
+## Result: moranI_hunt = 0.14 -> no autocorrelation (almost perfect randomness!)
+
+# Local Moran's I test to be able to visualize it on a map! What are the wards that tend to clusters?
+local_moranI_start_run <- localmoran(LondonWards_sp@data$startrundensity, Lward.lw)
+# Extract only the moran's I test values and the z-score (standard deviation) for the results!
+LondonWards_sp@data$start_run_local_moranI <- local_moranI_start_run[,1]
+LondonWards_sp@data$start_run_local_moranI_ZScore <- local_moranI_start_run[,4]
+
+# Manually setting of the breaks. 
+breaks<-c(-1000,-2.58,-1.96,1.96,2.58,1000)
+```
+Local Moran's I interactive map
+```{r}
+tm_shape(LondonWards_sp) +
+    tm_polygons("start_run_local_moranI",
+        style="fixed",
+        breaks=breaks,
+        palette= "RdBu",
+        title="Local Moran's I, Start Run Density")
+```
+
+```{r}
+# Getis Ord General G -> high or low values are clustering!
+globalG_start_run <- globalG.test(LondonWards_sp@data$startrundensity, Lward.lw)
+globalG_start_run
+## Result: Getis Ord General G: G statistic = 0.009 > G Expectation = 0.002 -> High Values tend to cluster
+
+# Local Getis Ord General G test to be able to visualize it on a map! Where are the wards that cluster?
+local_G_start_run <- localG(LondonWards_sp@data$startrundensity, Lward.lw)
+head(local_G_start_run)
+# Extract only the moran's I test values and the z-score (standard deviation) for the results!
+LondonWards_sp@data$start_run_G <- local_G_start_run 
+```
+Local Getis Ord General G map
+```{r}
+tm_shape(LondonWards_sp) +
+    tm_polygons("start_run_G",
+        style="fixed",
+        breaks=breaks,
+        palette="RdBu",
+        midpoint=NA,
+        title="Gi*, Run Start Density")
+```
+Moran's I and Getis Ord General G spatial statistics for run start location count!
+```{r}
+# Moran's I test -> cluster value (=1) or dispersed values (=-1)
+moranI_start_run_count <- moran.test(LondonWards_sp@data$startrun_count, Lward.lw)
+moranI_start_run_count
+
+# Local Moran's I test to be able to visualize it on a map! What are the wards that tend to clusters?
+local_moranI_start_run_count <- localmoran(LondonWards_sp@data$startrun_count, Lward.lw)
+head(local_moranI_start_run_count)
+# Extract only the moran's I test values and the z-score (standard deviation) for the results!
+LondonWards_sp@data$start_runcount_local_moranI <- local_moranI_start_run_count[,1]
+LondonWards_sp@data$start_runcount_local_moranI_ZScore <- local_moranI_start_run_count[,4]
+
+# Manually setting of the breaks. 
+breaks <- c(-1000,-2.58,-1.96,1.96,2.58,1000)
+```
+Local Moran's I interactive map
+```{r}
+tm_shape(LondonWards_sp) +
+    tm_polygons("start_runcount_local_moranI",
+        style="fixed",
+        breaks=breaks,
+        palette= "RdBu",
+        midpoint=NA,
+        title="Local Moran's I, Start Run Count")
+```
+```{r}
+# Getis Ord General G -> high or low values are clustering!
+globalG_start_run_count <- globalG.test(LondonWards_sp@data$startrun_count, Lward.lw)
+globalG_start_run_count
+## Result: Getis Ord General G: G statistic = 0.003 > G Expectation = 0.002 -> High Values tend to cluster
+
+# Local Getis Ord General G test to be able to visualize it on a map! Where are the wards that cluster?
+local_G_start_runcount <- localG(LondonWards_sp@data$startrun_count, Lward.lw)
+# Extract only the moran's I test values and the z-score (standard deviation) for the results!
+LondonWards_sp@data$start_runcount_G <- local_G_start_runcount 
+```
+Local Getis Ord General G map
+```{r}
+tm_shape(LondonWards_sp) +
+    tm_polygons("start_runcount_G",
+        style="fixed",
+        breaks=breaks,
+        palette="RdBu",
+        midpoint=NA,
+        title="Gi*, Run Start Count")
+```
+Research Question 3 - What are the wards where the most people run? 
+
+This third question will also be answered through the use of spatial analysis method. Here we need to find in which wards do the running routes passed through. 
+First, the intersection of all running routes with the LondonWards is find and the number of running routes passing through a wards is counted. Then, it is possible to use Moran I's, Geary's C and Getis Ord General G test. 
+```{r message=FALSE, warning=FALSE}
+# Find the intersection of the running route with the LondonWards. 
+wards_run_intersect <- st_intersects(LondonWards_sf, run_november_sf)
+# For the first ward. Find all the run passing through the first ward. Make a dataframe with the run id and count the number of run in the dataframe. (sum the column!) 
+first_ward <- wards_run_intersect[1]
+run_i_df <- data.frame(first_ward)
+count_df <- count(run_i_df)
+
+# For loop to find the total run passing through a ward. 
+for (i in 2:nrow(wards_run_intersect)){
+  run_i <- wards_run_intersect[i]
+  run_i_df <- data.frame(run_i)
+  count_run <- count(run_i_df)
+  # Save the values in the count_df dataframe!
+  count_df <- rbind(count_df, count_run)
+}
+
+# Rename the column of count_df
+names(count_df)[1] <- "count_run"
+# Change the dataframe to vector!
+count_run <- data.matrix(count_df)
+count_run <- as.numeric(count_run)
+# class(count_run)
+# Append the count_run to the LondonWards sp DataFrame!
+LondonWards_sp@data$count_run <- count_run
+# Calculate the density for the number of route passing through the LondonWards!
+LondonWards_sp@data$count_run_density <- LondonWards_sp$count_run/poly.areas(LondonWards_sp)
+```
+View all the london Run! 
+Number of running route for each London ward
+```{r}
+# Quick Choropleth map 
+tm_shape(LondonWards_sp) +
+  tm_polygons("count_run",
+              style="jenks",
+              palette="PuBu",
+              title="Number of running route for each London ward")
+```
+Density of running route for each London ward
+```{r}
+# Quick Choropleth map for density!
+tm_shape(LondonWards_sp) +
+  tm_polygons("count_run_density",
+              style="jenks",
+              palette="PuBu",
+              title="Density of running route for each London ward")
+```
+Moran's I and Getis Ord General G for Count Run. 
+```{r}
+# Moran's I test -> cluster value (=1) or dispersed values (=-1)
+moranI_run_count <- moran.test(LondonWards_sp@data$count_run, Lward.lw)
+moranI_run_count
+## Result: moranI_hunt = 0.73 -> seem to have some spatial autocorrelation (make sense, it is a linestrings!)
+
+# Local Moran's I test to be able to visualize it on a map! What are the wards that tend to clusters?
+local_moranI_run_count <- localmoran(LondonWards_sp@data$count_run, Lward.lw)
+# Extract only the moran's I test values and the z-score (standard deviation) for the results!
+LondonWards_sp@data$count_run_local_moranI <- local_moranI_run_count[,1]
+LondonWards_sp@data$count_run_local_moranI_ZScore <- local_moranI_run_count[,4]
+```
+Local Moran's I interactive map
+```{r}
+tm_shape(LondonWards_sp) +
+    tm_polygons("count_run_local_moranI",
+        style="fixed",
+        breaks=breaks,
+        palette= "RdBu",
+        midpoint=NA,
+        title="Local Moran's I, Run Count")
+```
+```{r}
+# Getis Ord General G -> high or low values are clustering!
+globalG_run_count <- globalG.test(LondonWards_sp@data$count_run, Lward.lw)
+globalG_run_count
+## Result: Getis Ord General G: G statistic = 0.006 > G Expectation = 0.002 -> High Values tend to cluster
+
+# Local Getis Ord General G test to be able to visualize it on a map! Where are the wards that cluster?
+local_G_run_count <- localG(LondonWards_sp@data$count_run, Lward.lw)
+# Extract only the moran's I test values and the z-score (standard deviation) for the results!
+LondonWards_sp@data$count_run_G <- local_G_run_count 
+```
+Local Getis Ord General G map
+```{r}
+tm_shape(LondonWards_sp) +
+    tm_polygons("count_run_G",
+        style="fixed",
+        breaks=breaks,
+        palette="RdBu",
+        midpoint=NA,
+        title="Gi*, Run Start Count")
+```
+Moran's I and Getis Ord General G for Count Run Density. 
+```{r}
+# Moran's I test -> cluster value (=1) or dispersed values (=-1)
+moranI_count_run_density <- moran.test(LondonWards_sp@data$count_run_density, Lward.lw)
+moranI_count_run_density
+## Result: moranI_hunt = 0.62 -> seem to have some spatial autocorrelation (make sense, it is a linestrings!)
+
+# Local Moran's I test to be able to visualize it on a map! What are the wards that tend to clusters?
+local_moranI_count_run_density <- localmoran(LondonWards_sp@data$count_run_density, Lward.lw)
+# Extract only the moran's I test values and the z-score (standard deviation) for the results!
+LondonWards_sp@data$count_run_density_local_moranI <- local_moranI_count_run_density[,1]
+LondonWards_sp@data$count_run_density_local_moranI_ZScore <- local_moranI_count_run_density[,4]
+
+```
+Local Moran's I interactive map
+```{r}
+tm_shape(LondonWards_sp) +
+    tm_polygons("count_run_density_local_moranI",
+        style="fixed",
+        breaks=breaks,
+        palette= "RdBu",
+        midpoint=NA,
+        title="Local Moran's I, Run Count Density")
+```
+```{r}
+# Getis Ord General G -> high or low values are clustering!
+globalG_count_run_density <- globalG.test(LondonWards_sp@data$count_run_density, Lward.lw)
+globalG_count_run_density
+## Result: Getis Ord General G: G statistic = 0.02 > G Expectation = 0.002 -> High Values tend to cluster
+
+# Local Getis Ord General G test to be able to visualize it on a map! Where are the wards that cluster?
+local_G_count_run_density <- localG(LondonWards_sp@data$count_run_density, Lward.lw)
+# Extract only the moran's I test values and the z-score (standard deviation) for the results!
+LondonWards_sp@data$count_run_density_G <- local_G_count_run_density
+```
+Local Getis Ord General G map
+```{r}
+tm_shape(LondonWards_sp) +
+    tm_polygons("count_run_density_G",
+        style="fixed",
+        breaks=breaks,
+        palette="RdBu",
+        midpoint=NA,
+        title="Gi*, Run Count Density")
+```
