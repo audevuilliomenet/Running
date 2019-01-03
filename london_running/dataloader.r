@@ -6,10 +6,7 @@ library(rgdal)
 library(shiny)
 library(leaflet)
 
-# Need to setwd inside the Folder that contains the kml file for all the runs!Example below!
-# setwd("/Users/audevuilliomenet/Documents/MSc. Smart Cities/GI Systems and Science/GIS London Run/Running/london_running")
-# setwd(".... /Run_November.kml")
-
+# Read all the running files
 run_november <- list.files(path="Run_November")
 
 run_november_first <- data.frame(sf::st_read(paste("Run_November/",run_november[1],sep="")))
