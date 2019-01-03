@@ -1,9 +1,4 @@
 #user interface for London Shiny
-library(sp)
-library(sf)
-library(tmap)
-library(dplyr)
-library(rgdal)
 library(shiny)
 library(leaflet)
 

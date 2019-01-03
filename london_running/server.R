@@ -1,6 +1,6 @@
 library(shiny)
 
-source("dataloader.r")
+# source("dataloader.r")
 
 # Define server function to draw the run routes
 shinyServer(function(input, output) {

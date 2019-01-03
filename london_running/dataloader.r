@@ -1,28 +1,46 @@
-# Need to setwd inside the Folder that contains the kml file for all the runs! 
+library(sp)
+library(sf)
+library(tmap)
+library(dplyr)
+library(rgdal)
+library(shiny)
+library(leaflet)
+
+# Need to setwd inside the Folder that contains the kml file for all the runs!Example below!
+# setwd("/Users/audevuilliomenet/Documents/MSc. Smart Cities/GI Systems and Science/GIS London Run/Running/london_running")
 # setwd(".... /Run_November.kml")
-run_november <- list.files()
 
-# Set wd back to open the London boundaries!
-# getwd
-LondonWards <- readOGR(" ... /LondonWardsBoundaries/LondonWardsNew.shp", layer="LondonWardsNew")
+run_november <- list.files(path="Run_November")
 
-######## Start To Download the file for the shiny application ###########
-# List all the files in the current directory! Here my kml files!
-run_november <- list.files()
+run_november_first <- data.frame(sf::st_read(paste("Run_November/",run_november[1],sep="")))
+run_nov_route_1 <- run_november_first[1,]
+dataframe_allrun_november <- run_nov_route_1
+
+for (i in run_november){
+  #print(paste("Run_November/",i,sep=""))
+  runs_nov <- data.frame(sf::st_read(paste("Run_November/",i,sep="")))
+  runs_route <- runs_nov[1,]
+  dataframe_allrun_november <- rbind(dataframe_allrun_november, runs_route)
+}
+
+dataframe_allrun_november <- dataframe_allrun_november[-c(1),]
+
+# Set wd back to the shiny Application for the London boundaries!
+# LondonWards <- readOGR("/Users/audevuilliomenet/Documents/MSc. Smart Cities/GI Systems and Science/GIS London Run/Running/london_running/LondonWardsBoundaries/LondonWardsNew.shp", layer="LondonWardsNew")
 
 # Read the first file in file_list and create a dataframe. 
-first_running <- data.frame(sf::st_read(run_november[1]))
-class(first_running$geometry)
-dataframe_allrun_november <- first_running[1,]
+# first_running <- data.frame(sf::st_read(run_november[1]))
+# class(first_running$geometry)
+# dataframe_allrun_november <- first_running[1,]
 
 # loops through all the file in file_list
 # selection only the first row of the file
 # append the first row (path route) to the dataframe
-for (index in 2:length(run_november)){
-  read_run <- data.frame(sf::st_read(run_november[index]))
-  firstrow_run <- read_run[1,]
-  dataframe_allrun_november <- rbind(dataframe_allrun_november, firstrow_run) 
-} 
+# for (index in 2:length(run_november)){
+#  read_run <- data.frame(sf::st_read(run_november[index]))
+#  firstrow_run <- read_run[1,]
+#  dataframe_allrun_november <- rbind(dataframe_allrun_november, firstrow_run) 
+# } 
 
 # Change the dataframe to an sf object
 allrun_november_sf <- sf::st_sf(dataframe_allrun_november) 
@@ -75,6 +93,9 @@ run_november_sp@data$latitude <- cbind(run_november_sp@data$latitude, latitude)
 
 # Transform back to an sf object!
 run_november_sf <- st_as_sf(run_november_sp)
+
+# Read the LondonWards boundaries!
+LondonWards <- readOGR("LondonWardsBoundaries/LondonWardsNew.shp", layer="LondonWardsNew")
 
 # Transfrom the LondonWards to an sf object and set coordinate system same as the run_dataframe_sf (WGS84). 
 LondonWards_sf <- st_as_sf(LondonWards)
